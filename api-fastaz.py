@@ -35,22 +35,23 @@ def token_required(func):
 @app.route('/login', methods=['POST'])
 def login():
     _id = request.json['_id']
-    username = request.json['username']
-    password = request.json['password']
+    usernameAz = request.json['usernameAz']
+    passwordAz = request.json['passwordAz']
 
-    if username and password and _id:
+    if usernameAz and passwordAz and _id:
         token = jwt.encode({
             '_id' : _id,
-            'username' : username,
-            'password' : password,
+            'username' : usernameAz,
+            'password' : passwordAz,
             },
             app.config['SECRET_KEY']
             )
         if collection.count_documents({"_id":_id}) == 0:
             dataUser = {
                 '_id' : _id,
-                'username' : username,
-                'password' : password
+                'username' : usernameAz,
+                'password' : passwordAz,
+                'shopee' : []
             }
             collection.insert_one(dataUser)
 
@@ -58,11 +59,48 @@ def login():
         return jsonify({
             'token' : token.decode('utf-8'),
             '_id' : _id,
-            'username' : username
+            'username' : usernameAz
             })
     else:
         return make_response('Unable to verify', 403 , {'WWW-Authenticate': 'Basic realm:"Authentication Failed !"'})
 
+@app.route('/check_user_shopee', methods=['POST'])
+def check_shopee_username():
+    usernameAz = request.json['usernameAz']
+    shopid = request.json['shopid']
+    usernameShop = request.json['usernameShop']
+    cookie = request.json['cookie']
+
+    if usernameAz and shopid and usernameShop:
+        try:
+            if collection.count_documents({"usernameAz":usernameAz , "shopee.shopid" : shopid}) == 0:
+                collection.update(
+            {"username_az": usernameAz},
+            {"$push":
+                {"shopee":{"$each":[
+                                { "cookie": cookie,
+                                    "shop_name": usernameShop,
+                                    "shop_id": shopid,
+                                    "status_cookie": "True",
+                                    "active_functions": [],
+                                    "reply_rating": {
+                                            "rating_1star": [],
+                                            "rating_2star": [],
+                                            "rating_3star": [],
+                                            "rating_4star": [],
+                                            "rating_5star": []
+                                                    },
+                                    "list_push_product" : []   
+                                        
+                                        },
+                                    ]}
+                            }},
+            upsert=True)
+                return jsonify({'create_user' : True})
+            else:
+                return jsonify({'create_user' : False})
+        except:
+            return jsonify({'error' : 'Can not update database'})
 
 
 
