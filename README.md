@@ -1,3 +1,3 @@
 # Python Flask Shopee Tools
 
-Run install requirements.txt
+Run python3 api-fastaz.py -- For backend
