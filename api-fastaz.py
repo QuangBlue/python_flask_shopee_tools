@@ -1,5 +1,5 @@
 from flask import Flask , request , jsonify , make_response
-import pymongo 
+import pymongo , json
 import jwt
 from functools import wraps
 
@@ -34,24 +34,25 @@ def token_required(func):
 
 @app.route('/login', methods=['POST'])
 def login():
-    _id = request.json['_id']
-    usernameAz = request.json['usernameAz']
-    passwordAz = request.json['passwordAz']
+    _id = int(request.values['_id'])
+    usernameAz = request.values['usernameAz']
+    tokenWeb = request.values['tokenWeb']
+    email = request.values['email']
 
-    if usernameAz and passwordAz and _id:
+    if usernameAz and _id:
         token = jwt.encode({
             '_id' : _id,
-            'username' : usernameAz,
-            'password' : passwordAz,
+            'usernameAz' : usernameAz
             },
             app.config['SECRET_KEY']
             )
         if collection.count_documents({"_id":_id}) == 0:
             dataUser = {
                 '_id' : _id,
-                'username' : usernameAz,
-                'password' : passwordAz,
-                'shopee' : []
+                'usernameAz' : usernameAz,
+                'tokenWeb' : tokenWeb,
+                'email' : email,
+                'shopee' : {}
             }
             collection.insert_one(dataUser)
 
@@ -59,7 +60,8 @@ def login():
         return jsonify({
             'token' : token.decode('utf-8'),
             '_id' : _id,
-            'username' : usernameAz
+            'username' : usernameAz,
+            'email' : email
             })
     else:
         return make_response('Unable to verify', 403 , {'WWW-Authenticate': 'Basic realm:"Authentication Failed !"'})
@@ -73,37 +75,130 @@ def check_shopee_username():
 
     if usernameAz and shopid and usernameShop:
         try:
-            if collection.count_documents({"usernameAz":usernameAz , "shopee.shopid" : shopid}) == 0:
-                collection.update(
-            {"username_az": usernameAz},
-            {"$push":
-                {"shopee":{"$each":[
-                                { "cookie": cookie,
-                                    "shop_name": usernameShop,
-                                    "shop_id": shopid,
-                                    "status_cookie": "True",
-                                    "active_functions": [],
-                                    "reply_rating": {
-                                            "rating_1star": [],
-                                            "rating_2star": [],
-                                            "rating_3star": [],
-                                            "rating_4star": [],
-                                            "rating_5star": []
-                                                    },
-                                    "list_push_product" : []   
+            if collection.count_documents({"usernameAz":usernameAz , f"shopee.{usernameShop}" : { "$exists" : True }}) == 0:
+                data = { 
+                    "cookie": cookie,
+                    "shop_name": usernameShop,
+                    "shopid": shopid,
+                    "status_cookie": "True",
+                    "active_functions": [],
+                    "reply_rating": {
+                            "1": [],
+                            "2": [],
+                            "3": [],
+                            "4": [],
+                            "5": []
+                                    },
+                    "list_push_product" : []   
                                         
-                                        },
-                                    ]}
-                            }},
-            upsert=True)
+                                        }
+                collection.update({"usernameAz" : usernameAz}, {"$set" : 
+                { f'shopee.{usernameShop}' : data}}, upsert=True)
                 return jsonify({'create_user' : True})
             else:
                 return jsonify({'create_user' : False})
         except:
             return jsonify({'error' : 'Can not update database'})
 
+@app.route('/get_data_user_shopee' , methods = ['POST'])
+def get_data_user_shopee():
+    usernameAz = request.values['usernameAz']
 
+    if usernameAz:
+        listShop =[]
+        r = collection.find({
+            'usernameAz' : usernameAz,
+            })
+        for x in r:
+            for shop in x['shopee']:
+                listShop.append(shop)
 
+        if len(listShop) != 0 :
+            re = {'data' : listShop,
+                'success' : True
+            }
+        else:
+            re = {'success' : False}
+        
+        return jsonify(re)
+    else:
+        return jsonify({'error' : 'Can not update database'})
+
+@app.route('/get_data_shopee' , methods = ['POST'])
+def get_data_shopee():
+    usernameAz = request.values['usernameAz']
+
+    if usernameAz:
+        data = None
+        r = collection.find({
+            'usernameAz' : usernameAz,
+            })
+        for x in r:
+            data = x
+
+        if len(data) > 0 :
+            re = {'data' : data,
+                'success' : True
+            }
+        else:
+            re = {'success' : False}
+        
+        return jsonify(re)
+    else:
+        return jsonify({'error' : 'Can not update database'})
+
+@app.route('/del_user_shopee' , methods = ['POST'])
+def del_user_shopee():
+    usernameShop = request.values['usernameShop']
+    usernameAz = request.values['usernameAz']
+
+    if usernameAz and usernameShop:
+        if collection.count_documents({"usernameAz":usernameAz , f"shopee.{usernameShop}" : { "$exists" : True }}) != 0:
+            
+            r = collection.update({"usernameAz": usernameAz}, {"$unset": {f"shopee.{usernameShop}": 1}})
+            if r['updatedExisting'] == True:
+                return jsonify({'updated' : True})
+            else:
+                return jsonify({'updated' : False})
+
+        else:
+            return jsonify({'error' : 'Can not update empty database'})
+    else:
+        return jsonify({'error' : 'Can not update database'})
+
+@app.route('/save_reply_rating' , methods=['POST'])
+def save_reply_rating():
+    usernameShop = request.values['usernameShop']
+    usernameAz = request.values['usernameAz']
+    data = request.values['dataUpadte']
+    data = data.replace("\'", "\"")
+    data = json.loads(data)
+
+    print (data)
+    if usernameShop and usernameAz and data: 
+        if collection.count_documents({"usernameAz":usernameAz , f"shopee.{usernameShop}" : { "$exists" : True }}) != 0:
+
+            r = collection.update_many(
+            { 'usernameAz': usernameAz },
+            { '$set': { 
+                f'shopee.{usernameShop}.reply_rating.1': data['textOneStar'], 
+                f'shopee.{usernameShop}.reply_rating.2': data['textTwoStar'],
+                f'shopee.{usernameShop}.reply_rating.3': data['textThreeStar'],
+                f'shopee.{usernameShop}.reply_rating.4': data['textFourStar'],
+                f'shopee.{usernameShop}.reply_rating.5': data['textFiveStar'], 
+                }},
+            upsert=True  
+            )
+            print ('đây là r ', r.matched_count) 
+            if r.matched_count > 0:
+                return jsonify({'updated' : True})
+            else:
+                return jsonify({'updated' : False})
+        else:
+            return jsonify({'error' : 'Can not update empty database'})
+    else:
+        return jsonify({'error' : 'Can not update database'})
+    
 
 def decode(token):
     # token = request.json['token']
