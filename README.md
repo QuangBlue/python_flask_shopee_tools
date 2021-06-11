@@ -1,1 +1,3 @@
-# python_flask_shopee_tools
+# Python Flask Shopee Tools
+
+Run install requirements.txt
